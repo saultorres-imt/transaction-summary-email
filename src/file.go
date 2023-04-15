@@ -18,7 +18,7 @@ func getFileTransactions() ([]Txn, error) {
 	txns := []Txn{}
 
 	// Open the file
-	file, err := os.Open("../mock-data/txns.csv")
+	file, err := os.Open("../mock-data/txns2.csv")
 	if err != nil {
 		return nil, fmt.Errorf("Could not open file, %v", err)
 	}
