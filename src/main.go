@@ -1,12 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
-	"text/template"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
 const (
@@ -31,17 +36,34 @@ type EmailData struct {
 	SortedMonths        []string
 }
 
-func processEmail() error {
+func processEmail(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	var emailData EmailData
 
-	transactions, err := getFileTransactions()
+	err := json.Unmarshal([]byte(request.Body), &emailData)
 	if err != nil {
-		return fmt.Errorf("Fail to get txns %v", err)
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       fmt.Sprintf("Invalid request boody %v, err %v", request.Body, err),
+		}, nil
+	}
+
+	bucket := os.Getenv("S3_BUCKET")
+	key := os.Getenv("S3_KEY")
+
+	// Upodate DB with name account
+	accountID := updateDB(emailData.Name)
+
+	// Get transactions from a CVS file in a S3 Bucket
+	transactions, err := getFileTransactions(bucket, key)
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       fmt.Sprintf("Fail to read CVS file, bucket %v, key %v, err %v", bucket, key, err),
+		}, nil
 	}
 
 	// Scan over the transaction to summarize information
-	totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount := scanTransactions(transactions)
-	fmt.Printf("totalBalance -> %v\ntxnsPerMonth -> %v\naverageDebitAmount -> %v\naverageCreditAmount -> %v\n", totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount)
+	totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount := scanTransactions(accountID, transactions)
 
 	emailData.TotalBalance = totalBalance
 	emailData.AverageDebitAmount = averageDebitAmount
@@ -55,13 +77,38 @@ func processEmail() error {
 
 	err = tmpl.Execute(&emailBody, emailData)
 	if err != nil {
-		return fmt.Errorf("Error with html template %v", err)
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       fmt.Sprintf("Fail to process html template, err %v", err),
+		}, nil
 	}
 
-	if err := sendEmail("saultorres.imt@outlook.com", "saulftg.22@gmail.com", subject, emailBody.String()); err != nil {
-		return fmt.Errorf("Fail to send email %v", err)
+	// Send email
+	if err := sendEmail(emailData.From, emailData.To, subject, emailBody.String()); err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       fmt.Sprintf("Fail to process html template, err %v", err),
+		}, nil
 	}
-	return nil
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Body:       "Email sent",
+	}, nil
+}
+
+func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	switch request.HTTPMethod {
+	case "GET":
+		return getTransactionsHandler(request)
+	case "POST":
+		return processEmail(request)
+	default:
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusMethodNotAllowed,
+			Body:       "Method Not Allowed",
+		}, nil
+	}
 }
 
 func sortMonthsByDate(txnsPerMonth map[string][]Txn) []string {
@@ -85,15 +132,14 @@ func loadTemplate(name string) (string, error) {
 	return string(content), nil
 }
 
-func main() {
+func init() {
 	var err error
-	htmlTemplate, err = loadTemplate("../emailTemplate.html")
+	htmlTemplate, err = loadTemplate("emailTemplate.html")
 	if err != nil {
 		log.Fatalf("fail to process html template: %v", err)
 	}
-	err = processEmail()
-	if err != nil {
-		log.Fatalf("fail to process email: %v", err)
-	}
-	fmt.Print("Email sent\n")
+}
+
+func main() {
+	lambda.Start(handler)
 }

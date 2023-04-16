@@ -3,9 +3,12 @@ package main
 import (
 	"encoding/csv"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 type Txn struct {
@@ -14,17 +17,27 @@ type Txn struct {
 	Amount float64
 }
 
-func getFileTransactions() ([]Txn, error) {
+func getFileTransactions(bucket, key string) ([]Txn, error) {
 	txns := []Txn{}
 
-	// Open the file
-	file, err := os.Open("../mock-data/txns2.csv")
-	if err != nil {
-		return nil, fmt.Errorf("Could not open file, %v", err)
-	}
-	defer file.Close()
+	session := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-west-2")},
+	))
 
-	reader := csv.NewReader(file)
+	svc := s3.New(session)
+
+	obj, err := svc.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer obj.Body.Close()
+
+	reader := csv.NewReader(obj.Body)
 
 	records, err := reader.ReadAll()
 	if err != nil {
@@ -58,7 +71,7 @@ func getFileTransactions() ([]Txn, error) {
 	return txns, nil
 }
 
-func scanTransactions(txns []Txn) (float64, map[string][]Txn, float64, float64) {
+func scanTransactions(accountID uint, txns []Txn) (float64, map[string][]Txn, float64, float64) {
 	totalBalance := 0.0
 	txnsPerMonth := map[string][]Txn{}
 	averageDebitAmount := 0.0
@@ -78,6 +91,9 @@ func scanTransactions(txns []Txn) (float64, map[string][]Txn, float64, float64) 
 			creditTxns++
 			averageCreditAmount += txn.Amount
 		}
+
+		// Sotre the transaction in database
+		storeTransaction(txn, accountID)
 	}
 
 	return totalBalance, txnsPerMonth, averageDebitAmount / float64(debitTxns), averageCreditAmount / float64(creditTxns)
