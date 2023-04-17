@@ -1,108 +1,53 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"html/template"
-	"log"
 	"net/http"
 	"os"
-	"sort"
-	"strings"
+
+	"gorm.io/gorm"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/saultorres-imt/transaction-summary-email/src/infrastructure"
+	"github.com/saultorres-imt/transaction-summary-email/src/usecase"
 )
 
-const (
-	subject = "Summary of account transactions"
-)
+var db *gorm.DB
 
-var htmlTemplate string
-
-var months = map[string]int{
-	"January": 0, "February": 1, "March": 2, "April": 3, "May": 4, "June": 5,
-	"July": 6, "August": 7, "September": 8, "October": 9, "November": 10, "December": 11,
-}
-
-type EmailData struct {
-	Name                string `json:"name"`
-	From                string `json:"from"`
-	To                  string `json:"to"`
-	TotalBalance        float64
-	AverageDebitAmount  float64
-	AverageCreditAmount float64
-	TxnsPerMonth        map[string][]Txn
-	SortedMonths        []string
-}
-
-func processEmail(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	var emailData EmailData
-
-	err := json.Unmarshal([]byte(request.Body), &emailData)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusBadRequest,
-			Body:       fmt.Sprintf("Invalid request boody %v, err %v", request.Body, err),
-		}, nil
-	}
-
-	bucket := os.Getenv("S3_BUCKET")
-	key := os.Getenv("S3_KEY")
-
-	// Upodate DB with name account
-	accountID := updateDB(emailData.Name)
-
-	// Get transactions from a CVS file in a S3 Bucket
-	transactions, err := getFileTransactions(bucket, key)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       fmt.Sprintf("Fail to read CVS file, bucket %v, key %v, err %v", bucket, key, err),
-		}, nil
-	}
-
-	// Scan over the transaction to summarize information
-	totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount := scanTransactions(accountID, transactions)
-
-	emailData.TotalBalance = totalBalance
-	emailData.AverageDebitAmount = averageDebitAmount
-	emailData.AverageCreditAmount = averageCreditAmount
-	emailData.TxnsPerMonth = txnsPerMonth
-	emailData.SortedMonths = sortMonthsByDate(txnsPerMonth)
-
-	tmpl := template.Must(template.New("emailTemplate").Parse(htmlTemplate))
-
-	var emailBody strings.Builder
-
-	err = tmpl.Execute(&emailBody, emailData)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       fmt.Sprintf("Fail to process html template, err %v", err),
-		}, nil
-	}
-
-	// Send email
-	if err := sendEmail(emailData.From, emailData.To, subject, emailBody.String()); err != nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       fmt.Sprintf("Fail to process html template, err %v", err),
-		}, nil
-	}
-
-	return events.APIGatewayProxyResponse{
-		StatusCode: http.StatusOK,
-		Body:       "Email sent",
-	}, nil
-}
-
-func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func handler(request events.APIGatewayProxyRequest, processEmailUsecase *usecase.ProcessEmailUsecase, getTransactionsUsecase *usecase.GetTransactionsUsecase) (events.APIGatewayProxyResponse, error) {
 	switch request.HTTPMethod {
 	case "GET":
-		return getTransactionsHandler(request)
+		transactions, err := getTransactionsUsecase.Execute()
+		if err != nil {
+			return events.APIGatewayProxyResponse{
+				StatusCode: http.StatusInternalServerError,
+				Body:       err.Error(),
+			}, nil
+		} else {
+			return events.APIGatewayProxyResponse{
+				StatusCode: http.StatusOK,
+				Body:       string(transactions),
+				Headers:    map[string]string{"Content-Type": "application/json"},
+			}, nil
+		}
 	case "POST":
-		return processEmail(request)
+		bucket := os.Getenv("S3_BUCKET")
+		key := os.Getenv("S3_KEY")
+		err := processEmailUsecase.Execute(bucket, key)
+		if err != nil {
+			return events.APIGatewayProxyResponse{
+				StatusCode: http.StatusInternalServerError,
+				Body:       err.Error(),
+			}, nil
+		} else {
+			return events.APIGatewayProxyResponse{
+				StatusCode: http.StatusOK,
+				Body:       string("Email sent"),
+				Headers:    map[string]string{"Content-Type": "application/json"},
+			}, nil
+		}
 	default:
 		return events.APIGatewayProxyResponse{
 			StatusCode: http.StatusMethodNotAllowed,
@@ -111,35 +56,20 @@ func handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespo
 	}
 }
 
-func sortMonthsByDate(txnsPerMonth map[string][]Txn) []string {
-	sortedMonths := make([]string, 0, len(txnsPerMonth))
-	for month := range txnsPerMonth {
-		sortedMonths = append(sortedMonths, month)
-	}
-
-	// Sort months by date
-	sort.Slice(sortedMonths, func(i, j int) bool {
-		return months[sortedMonths[i]] < months[sortedMonths[j]]
-	})
-	return sortedMonths
-}
-
-func loadTemplate(name string) (string, error) {
-	content, err := os.ReadFile(name)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-func init() {
-	var err error
-	htmlTemplate, err = loadTemplate("emailTemplate.html")
-	if err != nil {
-		log.Fatalf("fail to process html template: %v", err)
-	}
-}
-
 func main() {
-	lambda.Start(handler)
+	session := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-west-2")},
+	))
+
+	accountRepo := infrastructure.NewDBAccountRepository(db)
+	transactionRepo := infrastructure.NewDBTransactionRepository(db)
+	fileRepo := infrastructure.NewS3FileRepository(session)
+	emailRepo := infrastructure.NewSESEmailRepository(session)
+
+	processEmailUsecase := usecase.NewProcessEmailUsecase(accountRepo, transactionRepo, fileRepo, emailRepo)
+	getTransactionsUsecase := usecase.NewGetTransactionsUsecase(transactionRepo)
+
+	lambda.Start(func(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+		return handler(request, processEmailUsecase, getTransactionsUsecase)
+	})
 }
