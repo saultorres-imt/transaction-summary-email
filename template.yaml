@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  VpcId:
+    Type: String
+    Description: ID of the VPC where the resources will be created
+  PublicSubnet1:
+    Type: String
+    Description: ID of the first public subnet in the VPC
+  PublicSubnet2:
+    Type: String
+    Description: ID of the second public subnet in the VPC
+Globals:
+  Function:
+    Environment:
+      Variables:
+        S3_BUCKET: !Ref S3Bucket
+        S3_KEY: txns.csv
+        DB_HOST: !GetAtt Database.Endpoint.Address
+        DB_PORT: !GetAtt Database.Endpoint.Port
+        DB_NAME: "${AWS::AccountId}-txns-database"
+
+Resources:
+  TransactionSummaryEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: main
+      Runtime: go1.x
+      CodeUri: src/
+      Events:
+        GetTransactions:
+          Type: Api
+          Properties:
+            Path: /transactions
+            Method: get
+        ProcessEmail:
+          Type: Api
+          Properties:
+            Path: /process-email
+            Method: post
+      Policies:
+        - SESCrudPolicy:
+            IdentityName: '*'
+        - SESBulkTemplatedCrudPolicy:
+            IdentityName: '*'
+        - SESEmailTemplateCrudPolicy: {}
+        - S3ReadPolicy:
+            BucketName: !Sub "txn-summ-bucket-${AWS::AccountId}"
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "txn-summ-bucket-${AWS::AccountId}"
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: 20
+      DBInstanceClass: db.t2.micro
+      Engine: postgres
+      EngineVersion: '13.3'
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref DBUsername, ':SecretString:username}}']]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref DBPassword, ':SecretString:password}}']]
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable PostgreSQL connection
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: PostgreSQL DB Subnet Group
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  DBUsername:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: db-username
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "db_user"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  DBPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: db-password
+      GenerateSecretString:
+        SecretStringTemplate: '{"password": "db_pass"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'

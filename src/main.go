@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"net/http"
 	"os"
 
@@ -15,6 +16,9 @@ import (
 )
 
 var db *gorm.DB
+
+//go:embed emailTemplate.html
+var emailTemplate string
 
 func handler(request events.APIGatewayProxyRequest, processEmailUsecase *usecase.ProcessEmailUsecase, getTransactionsUsecase *usecase.GetTransactionsUsecase) (events.APIGatewayProxyResponse, error) {
 	switch request.HTTPMethod {
@@ -35,7 +39,7 @@ func handler(request events.APIGatewayProxyRequest, processEmailUsecase *usecase
 	case "POST":
 		bucket := os.Getenv("S3_BUCKET")
 		key := os.Getenv("S3_KEY")
-		err := processEmailUsecase.Execute(bucket, key)
+		err := processEmailUsecase.Execute(bucket, key, emailTemplate)
 		if err != nil {
 			return events.APIGatewayProxyResponse{
 				StatusCode: http.StatusInternalServerError,
@@ -43,9 +47,9 @@ func handler(request events.APIGatewayProxyRequest, processEmailUsecase *usecase
 			}, nil
 		} else {
 			return events.APIGatewayProxyResponse{
-				StatusCode: http.StatusOK,
-				Body:       string("Email sent"),
-				Headers:    map[string]string{"Content-Type": "application/json"},
+				StatusCode:      http.StatusOK,
+				Body:            string("Email sent"),
+				IsBase64Encoded: false,
 			}, nil
 		}
 	default:

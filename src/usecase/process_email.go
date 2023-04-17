@@ -2,8 +2,6 @@ package usecase
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"sort"
 	"strings"
 	"text/template"
@@ -38,7 +36,7 @@ func NewProcessEmailUsecase(accountRepo domain.AccountRepository, transactionRep
 	}
 }
 
-func (uc *ProcessEmailUsecase) Execute(bucket, key string) error {
+func (uc *ProcessEmailUsecase) Execute(bucket, key, emailTemplate string) error {
 	var emailData domain.EmailData
 
 	// Upodate DB with name account
@@ -68,7 +66,7 @@ func (uc *ProcessEmailUsecase) Execute(bucket, key string) error {
 	emailData.TxnsPerMonth = txnsPerMonth
 	emailData.SortedMonths = sortMonthsByDate(txnsPerMonth)
 
-	tmpl := template.Must(template.New("emailTemplate").Parse(htmlTemplate))
+	tmpl := template.Must(template.New("emailTemplate").Parse(emailTemplate))
 
 	var emailBody strings.Builder
 
@@ -132,20 +130,4 @@ func scanTransactions(accountID uint, txns []domain.Txn, transactionRepo domain.
 	}
 
 	return totalBalance, txnsPerMonth, averageDebitAmount / float64(debitTxns), averageCreditAmount / float64(creditTxns), nil
-}
-
-func loadTemplate(name string) (string, error) {
-	content, err := os.ReadFile(name)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-func init() {
-	var err error
-	htmlTemplate, err = loadTemplate("emailTemplate.html")
-	if err != nil {
-		log.Fatalf("fail to process html template: %v", err)
-	}
 }

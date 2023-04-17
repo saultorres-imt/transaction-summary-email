@@ -10,7 +10,9 @@ This project processes a CSV file containing account transactions and sends a su
 ## Prerequisites
 
 - [Go](https://golang.org/doc/install) installed
+- [Docker](https://docs.docker.com/engine/install/ubuntu/) installed
 - [AWS CLI](https://aws.amazon.com/cli/) installed and configured with AWS credentials
+- [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html) installed
 
 ## CSV File Format
 
@@ -30,14 +32,60 @@ Where:
 ## Setup
 
 1. Clone the repository:
-```shell
+```bash
 git clone https://github.com/saultorres-imt/transaction-summary-email.git
 cd transaction-summary-email
+git checkout clean-arquitecture
 ```
 
-## Usage
+3. Give permision to script
+```bash
+chmod +x deploy.sh
+```
 
-Run the following command to verify, Amazon SES, the email addresses that will be used
+2. Run the script
+```bash
+./deploy.sh
+```
+This script will configure all parameter needed, upload the file located in mock-data/txns2.csv and build and deploy the application with sam. 
+
+
+
+
+
+
+2. Build the project
+```bash
+sam build --use-container
+```
+
+3. Deploy the project
+```bash
+sam deploy --guided
+```
+Follow the guided deployment prompts to configure your deployment settings. The deployment process will create a CloudFormation stack, which will create the necessary resources, including the Lambda function and API Gateway.
+
+Once the deployment is complete, you can find the API Gateway URL in the output of the sam deploy command or in the AWS Management Console under CloudFormation > Your Stack > Outputs.
+
+4. Upload the CVS file to the S3 bucket:
+```bash
+aws s3 cp mock-data/txns.csv s3://your-bucket-name/txns.csv
+```
+
+5. Verify email addresses
+Run the following command to verify the email addresses that will be used
 ```bash
 aws ses verify-email-identity --email-address youremail@example.com
 ```
+
+
+
+
+5. Upload the deployment package to the S3 bucket:
+```bash
+aws s3 cp deployment.zip s3://<your-bucket-name>/deployment.zip
+```
+
+
+## Usage
+
