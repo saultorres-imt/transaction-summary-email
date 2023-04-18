@@ -1,10 +1,13 @@
 package usecase
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"text/template"
+
+	"github.com/aws/aws-lambda-go/events"
 
 	"github.com/saultorres-imt/transaction-summary-email/src/domain"
 )
@@ -21,31 +24,24 @@ var months = map[string]int{
 }
 
 type ProcessEmailUsecase struct {
-	accountRepo     domain.AccountRepository
-	transactionRepo domain.TransactionRepository
-	fileRepo        domain.FileRepository
-	emailRepo       domain.EmailRepository
+	fileRepo  domain.FileRepository
+	emailRepo domain.EmailRepository
 }
 
-func NewProcessEmailUsecase(accountRepo domain.AccountRepository, transactionRepo domain.TransactionRepository, fileRepo domain.FileRepository, emailRepo domain.EmailRepository) *ProcessEmailUsecase {
+func NewProcessEmailUsecase(fileRepo domain.FileRepository, emailRepo domain.EmailRepository) *ProcessEmailUsecase {
 	return &ProcessEmailUsecase{
-		accountRepo:     accountRepo,
-		transactionRepo: transactionRepo,
-		fileRepo:        fileRepo,
-		emailRepo:       emailRepo,
+		fileRepo:  fileRepo,
+		emailRepo: emailRepo,
 	}
 }
 
-func (uc *ProcessEmailUsecase) Execute(bucket, key, emailTemplate string) error {
+func (uc *ProcessEmailUsecase) Execute(bucket, key, emailTemplate string, request events.APIGatewayProxyRequest) error {
 	var emailData domain.EmailData
 
-	// Upodate DB with name account
-	account := &domain.DBAccount{Name: emailData.Name}
-	err := uc.accountRepo.FirstOrCreate(account)
+	err := json.Unmarshal([]byte(request.Body), &emailData)
 	if err != nil {
-		return fmt.Errorf("Failed to create or find account: %v", err)
+		return fmt.Errorf("Invalid body request: %v", err)
 	}
-	accountID := account.Id
 
 	// Get transactions from a CVS file in a S3 Bucket
 	transactions, err := uc.fileRepo.GetTransactions(bucket, key)
@@ -54,7 +50,7 @@ func (uc *ProcessEmailUsecase) Execute(bucket, key, emailTemplate string) error 
 	}
 
 	// Scan over the transaction to summarize information
-	totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount, err := scanTransactions(accountID, transactions, uc.transactionRepo)
+	totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount, err := scanTransactions(transactions)
 
 	if err != nil {
 		return fmt.Errorf("Failed to scan transactions, err %v", err)
@@ -96,7 +92,7 @@ func sortMonthsByDate(txnsPerMonth map[string][]domain.Txn) []string {
 	return sortedMonths
 }
 
-func scanTransactions(accountID uint, txns []domain.Txn, transactionRepo domain.TransactionRepository) (float64, map[string][]domain.Txn, float64, float64, error) {
+func scanTransactions(txns []domain.Txn) (float64, map[string][]domain.Txn, float64, float64, error) {
 	totalBalance := 0.0
 	txnsPerMonth := map[string][]domain.Txn{}
 	averageDebitAmount := 0.0
@@ -115,17 +111,6 @@ func scanTransactions(accountID uint, txns []domain.Txn, transactionRepo domain.
 		} else {
 			creditTxns++
 			averageCreditAmount += txn.Amount
-		}
-
-		dbTxn := &domain.DBTxn{
-			ID:        accountID,
-			AccountID: uint(txn.Id),
-			Date:      txn.Date,
-			Amount:    txn.Amount,
-		}
-		err := transactionRepo.Create(dbTxn)
-		if err != nil {
-			return 0.0, nil, 0.0, 0.0, err
 		}
 	}
 

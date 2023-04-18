@@ -20,16 +20,3 @@ type EmailData struct {
 	TxnsPerMonth        map[string][]Txn
 	SortedMonths        []string
 }
-
-type DBAccount struct {
-	Id    uint `gorm:"primaryKey"`
-	Name  string
-	Email string
-}
-
-type DBTxn struct {
-	ID        uint `gorm:"primaryKey"`
-	AccountID uint
-	Date      time.Time
-	Amount    float64
-}
