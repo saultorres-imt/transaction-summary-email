@@ -17,12 +17,13 @@ This project processes a CSV file containing account transactions and sends a su
 ## CSV File Format
 
 The CSV file should have the following format:
-
-Id,Date,Transaction
-0,7/15,+60.5
-1,7/28,-10.3
-2,8/2,-20.46
-3,8/13,+10
+```csv
+Id,Date,Transaction  
+0,7/15,+60.5  
+1,7/28,-10.3  
+2,8/2,-20.46  
+3,8/13,+10  
+```
 
 Where:
 - Id is a unique identifier for the transaction
@@ -71,7 +72,7 @@ This section describes how to test the API endpoint using the POST method with a
 ```bash
 curl -X POST -H "Content-Type: application/json" -d '{"name": "Account owner", "from":"emailVerified@outlook.com", "to":"emailVerified2@gmail.com"}' https://example.com/api/your-endpoint
 ```
-Check the response from the server. If the request was successful, you should see the "Email Sent" message
+Check the response from the server. If the request was successful, you should see the "Email Sent" message.
 
 To test the Get method, the curl does not need a json body.
 ```bash
@@ -91,5 +92,6 @@ curl -X GET 'https://example.com/api/your-endpoint' --header 'Accept: */*'
 Then you would receive an email like this:
 ![Styled Email](emailTemplate.png)
 
-Same steps for the Get request but without a Json Body and change request method to Get. Then you shoul get a response like this:
+Same steps for the Get request but without a Json Body and change request method to Get. Then you shoul get a response like this:  
+
 ![Transactions stored](get-response.png)
