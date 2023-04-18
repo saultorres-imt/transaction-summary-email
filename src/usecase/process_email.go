@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 
 	"github.com/aws/aws-lambda-go/events"
-
 	"github.com/saultorres-imt/transaction-summary-email/src/domain"
 )
 
@@ -24,14 +24,16 @@ var months = map[string]int{
 }
 
 type ProcessEmailUsecase struct {
-	fileRepo  domain.FileRepository
-	emailRepo domain.EmailRepository
+	transactionRepo domain.TransactionRepository
+	fileRepo        domain.FileRepository
+	emailRepo       domain.EmailRepository
 }
 
-func NewProcessEmailUsecase(fileRepo domain.FileRepository, emailRepo domain.EmailRepository) *ProcessEmailUsecase {
+func NewProcessEmailUsecase(transactionRepo domain.TransactionRepository, fileRepo domain.FileRepository, emailRepo domain.EmailRepository) *ProcessEmailUsecase {
 	return &ProcessEmailUsecase{
-		fileRepo:  fileRepo,
-		emailRepo: emailRepo,
+		transactionRepo: transactionRepo,
+		fileRepo:        fileRepo,
+		emailRepo:       emailRepo,
 	}
 }
 
@@ -50,7 +52,7 @@ func (uc *ProcessEmailUsecase) Execute(bucket, key, emailTemplate string, reques
 	}
 
 	// Scan over the transaction to summarize information
-	totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount, err := scanTransactions(transactions)
+	totalBalance, txnsPerMonth, averageDebitAmount, averageCreditAmount, err := scanTransactions(emailData.Name, transactions, uc.transactionRepo)
 
 	if err != nil {
 		return fmt.Errorf("Failed to scan transactions, err %v", err)
@@ -92,7 +94,7 @@ func sortMonthsByDate(txnsPerMonth map[string][]domain.Txn) []string {
 	return sortedMonths
 }
 
-func scanTransactions(txns []domain.Txn) (float64, map[string][]domain.Txn, float64, float64, error) {
+func scanTransactions(accountName string, txns []domain.Txn, transactionRepo domain.TransactionRepository) (float64, map[string][]domain.Txn, float64, float64, error) {
 	totalBalance := 0.0
 	txnsPerMonth := map[string][]domain.Txn{}
 	averageDebitAmount := 0.0
@@ -111,6 +113,18 @@ func scanTransactions(txns []domain.Txn) (float64, map[string][]domain.Txn, floa
 		} else {
 			creditTxns++
 			averageCreditAmount += txn.Amount
+		}
+
+		dbTxn := &domain.DBTxn{
+			Id:          strconv.Itoa(txn.Id),
+			AccountName: accountName,
+			Date:        txn.Date,
+			Amount:      txn.Amount,
+		}
+
+		err := transactionRepo.Create(dbTxn)
+		if err != nil {
+			return 0.0, nil, 0.0, 0.0, err
 		}
 	}
 

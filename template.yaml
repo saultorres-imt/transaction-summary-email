@@ -16,6 +16,8 @@ Globals:
       Variables:
         S3_BUCKET: !Ref S3Bucket
         S3_KEY: txns.csv
+        DYNAMO_DB_TABLE: !Ref TransactionSummaryTable
+
 
 Resources:
   TransactionSummaryEmailFunction:
@@ -37,19 +39,36 @@ Resources:
             IdentityName: '*'
         - SESEmailTemplateCrudPolicy: {}
         - S3ReadPolicy:
-            BucketName: !Sub "transactions-summary-bucket-${AWS::AccountId}"
-        - AWSSecretsManagerGetSecretValuePolicy:
-            SecretArn: '*'
+            BucketName: !Sub "txn-summary-bucket-${AWS::AccountId}"
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TransactionSummaryTable
 
   S3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "transactions-summary-bucket-${AWS::AccountId}"
+      BucketName: !Sub "txn-summary-bucket-${AWS::AccountId}"
+
+  TransactionSummaryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: TransactionSummary
+      AttributeDefinitions:
+        - AttributeName: Id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
 
 Outputs:
-  EmailAPI:
-    Description: "API Gateway endpoint URL for Prod environment for First Function"
+  GetTxnAPI:
+    Description: "API Gateway endpoint URL for Prod environment to get all transactions"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/transactions"
+  SendEmailAPI:
+    Description: "API Gateway endpoint URL for Prod environment to send an email with transaction summary"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/process-email"
-  S3UploadBucketName:
-    Description: "S3 bucket for application uploads"
-    Value: !Ref 'S3Bucket'  
+  S3BucketName:
+    Description: "S3 bucket to upload the txns.csv file"
+    Value: !Ref 'S3Bucket'
