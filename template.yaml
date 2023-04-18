@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  VpcId:
+    Type: String
+    Description: ID of the VPC where the resources will be created
+  PublicSubnet1:
+    Type: String
+    Description: ID of the first public subnet in the VPC
+  PublicSubnet2:
+    Type: String
+    Description: ID of the second public subnet in the VPC
+Globals:
+  Function:
+    Environment:
+      Variables:
+        S3_BUCKET: !Ref S3Bucket
+        S3_KEY: txns.csv
+
+Resources:
+  TransactionSummaryEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: main
+      Runtime: go1.x
+      CodeUri: src/
+      Events:
+        ProcessEmail:
+          Type: Api
+          Properties:
+            Path: /process-email
+            Method: post
+      Policies:
+        - SESCrudPolicy:
+            IdentityName: '*'
+        - SESBulkTemplatedCrudPolicy:
+            IdentityName: '*'
+        - SESEmailTemplateCrudPolicy: {}
+        - S3ReadPolicy:
+            BucketName: !Sub "transactions-summary-bucket-${AWS::AccountId}"
+        - AWSSecretsManagerGetSecretValuePolicy:
+            SecretArn: '*'
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "transactions-summary-bucket-${AWS::AccountId}"
+
+Outputs:
+  EmailAPI:
+    Description: "API Gateway endpoint URL for Prod environment for First Function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/process-email"
+  S3UploadBucketName:
+    Description: "S3 bucket for application uploads"
+    Value: !Ref 'S3Bucket'  
