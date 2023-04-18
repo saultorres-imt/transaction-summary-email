@@ -92,4 +92,4 @@ Then you would receive an email like this:
 ![Styled Email](emailTemplate.png)
 
 Same steps for the Get request but without a Json Body and change request method to Get. Then you shoul get a response like this:
-![Transactions stored](get-response.png.png)
+![Transactions stored](get-response.png)
