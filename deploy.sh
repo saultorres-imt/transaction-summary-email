@@ -1,15 +1,17 @@
 #!/bin/bash
 
+set -e
+
 # Set the AWS region and profile
-aws configure set region us-east-1
+aws configure set region us-east-2
 aws configure set profile default
 
 # Set the stack name using the AWS account ID
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
 
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
-STACK_NAME="txn-summary-stack-${AWS_ACCOUNT_ID}-${TIMESTAMP}"
-BUCKET_NAME="transactions-summary-bucket-${AWS_ACCOUNT_ID}"
+STACK_NAME="txn-summ-stack-${AWS_ACCOUNT_ID}-${TIMESTAMP}"
+BUCKET_NAME="txn-summary-bucket-${AWS_ACCOUNT_ID}"
 
 # Get the VPC ID and subnet IDs
 VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)

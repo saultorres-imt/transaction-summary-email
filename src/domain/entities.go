@@ -20,3 +20,10 @@ type EmailData struct {
 	TxnsPerMonth        map[string][]Txn
 	SortedMonths        []string
 }
+
+type DBTxn struct {
+	Id          string
+	AccountName string
+	Date        time.Time
+	Amount      float64
+}

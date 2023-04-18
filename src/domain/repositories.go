@@ -1,5 +1,10 @@
 package domain
 
+type TransactionRepository interface {
+	Create(transaction *DBTxn) error
+	FindAll() ([]DBTxn, error)
+}
+
 type FileRepository interface {
 	GetTransactions(bucket, key string) ([]Txn, error)
 }

@@ -73,6 +73,12 @@ curl -X POST -H "Content-Type: application/json" -d '{"name": "Account owner", "
 ```
 Check the response from the server. If the request was successful, you should see the "Email Sent" message
 
+To test the Get method, the curl does not need a json body.
+```bash
+curl -X GET 'https://example.com/api/your-endpoint' --header 'Accept: */*'
+```
+
+
 ### HTTP Clients
 
 1. Create a new request.
@@ -81,3 +87,9 @@ Check the response from the server. If the request was successful, you should se
 4. Select the Body tab, choose raw, and set the content type to JSON.
 5. Replace <JSON_BODY> with the JSON body you want to send in the request.
 6. Click the Send button to send the request.
+
+Then you would receive an email like this:
+![Styled Email](emailTemplate.png)
+
+Same steps for the Get request but without a Json Body and change request method to Get. Then you shoul get a response like this:
+![Transactions stored](get-response.png.png)
